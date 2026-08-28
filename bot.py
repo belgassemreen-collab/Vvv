@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 LOCALIZED_TEXTS = {
     LANG_AR: {
         "welcome_unregistered": (
-            "👑 <b>⚜️ AMIN VIP BoT 👑</b>\n"
+            "👑 <b>⚜️ 領LoNeLi BoT 👑</b>\n"
             "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n"
             "⚠️ <b>هذا البوت مدفوع وغير مجاني!</b>\n\n"
             "يرجى التواصل مع المطور مباشرة للحصول على مفتاح تفعيل لتتمكن من استخدام ميزات البوت الذكية والمزينة لإدارة حساباتك:\n"
@@ -36,7 +36,7 @@ LOCALIZED_TEXTS = {
             f"📱 حساب تليجرام: @{DEV_USER}\n"
         ),
         "welcome_back": (
-            "👑 <b>⚜️ AMIN VIP BoT 👑</b>\n"
+            "👑 <b>⚜️ 領LoNeLi BoT 👑</b>\n"
             "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n"
             "✨ <b>أهلاً بك مجدداً في لوحة تحكم حسابات لونيلي الذكية!</b> ✨\n\n"
             "الآن يمكنك إدارة جميع حساباتك وفحصها وتعديلها بسهولة وبأزرار تفاعلية فخمة وخالية من الخربطة."
@@ -411,6 +411,19 @@ async def handle_text_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE)
     text = update.message.text.strip()
     lang = DataManager.get_user_lang(user_id)
     is_admin = DataManager.is_admin(user_id)
+
+    # Allow the user to submit a new activation key even when the old one expired.
+    if state != "awaiting_activation_key" and not is_admin and not check_user_key(user_id):
+        context.user_data["state"] = "awaiting_activation_key"
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(
+                "📞 شراء تفعيل / Buy Key",
+                url=f"https://t.me/{DEV_USER}",
+                style="primary"
+            )]
+        ])
+        await update.message.reply_html(get_txt("invalid_key", lang), reply_markup=keyboard)
+        return
 
     if state == "awaiting_activation_key":
         success, msg_info = validate_key(text, user_id)
@@ -796,6 +809,21 @@ async def handle_callback_queries(update: Update, context: ContextTypes.DEFAULT_
     lang = DataManager.get_user_lang(user_id)
     is_admin = DataManager.is_admin(user_id)
     data = query.data
+
+    # Subscription guard for inline buttons.
+    # An old keyboard must NOT remain usable after the activation key expires.
+    # Admins are always allowed to use the bot.
+    if not is_admin and not check_user_key(user_id):
+        context.user_data["state"] = "awaiting_activation_key"
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(
+                "📞 شراء تفعيل / Buy Key",
+                url=f"https://t.me/{DEV_USER}",
+                style="primary"
+            )]
+        ])
+        await smart_edit(query, get_txt("invalid_key", lang), keyboard)
+        return
 
     if data == "btn_goto_home":
         await smart_edit(query, get_txt("welcome_back", lang), make_user_menu(lang, is_admin))
@@ -1470,11 +1498,6 @@ def run_telegram_bot():
     application.add_handler(CallbackQueryHandler(handle_callback_queries))
     
     print(f"⚡ LoNely Bot Running ({DEV_NAME}) is starting...")
-
-    # Python 3.14 may not have a current event loop in MainThread.
-    # Create one explicitly before python-telegram-bot starts polling.
-    asyncio.set_event_loop(asyncio.new_event_loop())
-
     application.run_polling()
 
 if __name__ == "__main__":
